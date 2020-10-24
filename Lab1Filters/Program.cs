@@ -6,6 +6,7 @@ using System.IO;
 using System.Reflection;
 using System.Threading.Tasks;
 using System.Drawing;
+using System.Drawing.Imaging;
 
 namespace Lab1Filters
 {
@@ -13,28 +14,31 @@ namespace Lab1Filters
     {
         private Bitmap image;
         private Color[,] colors;
-        private byte[][,] byteColors;
-        private Bitmap result;
+        private Color[,] resultColors;
+        private Bitmap resultBitmap;
 
-        public MedianFiltration(string path)
+        public MedianFiltration(string path, int windowWidth, int windowHeight)
         {
             image = new Bitmap(path);
-            ArrayInitialization();
-            ByteArrayInitialization();
-            
+            ColorArrayInitialization();
+            resultColors = MethodImplementation(windowWidth, windowHeight);
+            BitmapInitialization();
+            resultBitmap.Save("Lab1Result.jpg", ImageFormat.Jpeg);
         }
 
-        public MedianFiltration(Stream path)
+        public MedianFiltration(Stream path, int windowWidth, int windowHeight)
         {
             image = new Bitmap(path);
-            ArrayInitialization();
-            ByteArrayInitialization();
+            ColorArrayInitialization();
+            resultColors = MethodImplementation(windowWidth, windowHeight);
+            BitmapInitialization();
+            resultBitmap.Save("Lab1Result.jpg", ImageFormat.Jpeg);
         }
 
-        private void ArrayInitialization()
+        private void ColorArrayInitialization()
         {
             colors = new Color[image.Width, image.Height];
-            for(int i =0; i < colors.GetLength(0); i++)
+            for (int i = 0; i < colors.GetLength(0); i++)
             {
                 for (int j = 0; j < colors.GetLength(1); j++)
                 {
@@ -43,37 +47,64 @@ namespace Lab1Filters
             }
         }
 
-        private void ByteArrayInitialization()
+        private void BitmapInitialization()
         {
-            byteColors = new byte[3][,];
-            for (int k = 0; k < 3; k++)
+            resultBitmap = new Bitmap(resultColors.GetLength(0), resultColors.GetLength(1));
+            for (int x = 0; x < resultBitmap.Width - 1; x++)
             {
-                byteColors[k] = new byte[image.Width, image.Height];
-            }
-            for (int i = 0; i < colors.GetLength(0); i++)
-            {
-                for (int j = 0; j < colors.GetLength(1); j++)
+                for (int y = 0; y < resultBitmap.Height - 1; y++)
                 {
-                    byteColors[0][i, j] = colors[i,j].R;
-                    byteColors[1][i, j] = colors[i,j].G;
-                    byteColors[2][i, j] = colors[i,j].B;
+                    resultBitmap.SetPixel(x, y, resultColors[x, y]);
                 }
             }
         }
 
-        private Color OneIncrementation(int windowWidth, int windowHeight)
+        private Color[,] MethodImplementation(int windowWidth, int windowHeight)
         {
+            Color[,] result = new Color[image.Width, image.Height];
             int edgex = (int)Math.Ceiling(windowWidth / 2.0);
             int edgey = (int)Math.Ceiling(windowHeight / 2.0);
             for (int x = edgex; x < image.Width - edgex; x++)
             {
-                for (int y = 0; y < image.Height - edgey; y++)
+                for (int y = edgey; y < image.Height - edgey; y++)
                 {
-
+                    Color[,] greyArray = new Color[windowWidth, windowHeight];
+                    for (int fx = 0; fx < windowWidth; fx++)
+                    {
+                        for (int fy = 0; fy < windowHeight; fy++)
+                        {
+                            greyArray[fx, fy] = colors[x + fx - edgex, y + fy - edgey];
+                        }
+                    }
+                    result[x, y] = GettingMedian(greyArray);
                 }
             }
 
-            return new Color();
+            return result;
+        }
+
+        private Color GettingMedian(Color[,] greyArray)
+        {
+            List<byte>[] byteColors = new List<byte>[3] {
+                new List<byte>(), new List<byte>(), new List<byte>()
+            };
+            byte[] RGBvalues = new byte[3];
+            for (int i = 0; i < greyArray.GetLength(0); i++)
+            {
+                for (int j = 0; j < greyArray.GetLength(1); j++)
+                {
+                    byteColors[0].Add(greyArray[i, j].R);
+                    byteColors[1].Add(greyArray[i, j].G);
+                    byteColors[2].Add(greyArray[i, j].B);
+                }
+            }
+            for (int k = 0; k < byteColors.Length; k++)
+            {
+                byteColors[k].Sort();
+                RGBvalues[k] = byteColors[k][byteColors[k].Count / 2];
+            }
+            Color resColor = Color.FromArgb(255, RGBvalues[0], RGBvalues[1], RGBvalues[2]);
+            return resColor;
         }
     }
 
@@ -83,17 +114,8 @@ namespace Lab1Filters
         {
             Assembly myAssembly = Assembly.GetExecutingAssembly();
             Stream myStream = myAssembly.GetManifestResourceStream("Lab1Filters.image.Lab1.jpg");
-            MedianFiltration medianFiltration = new MedianFiltration(myStream);
-            /*Bitmap img = new Bitmap(myStream);
-            Console.WriteLine("{0}; {1}", img.Height, img.Width);
-            Color color = img.GetPixel(959, 1279);
-            byte r = color.R;
-            byte g = color.G;
-            byte b = color.B;
-            byte a = color.A;
-            string text = String.Format("Slate Blue has these ARGB values: Alpha:{0}, " +
-                "red:{1}, green: {2}, blue: {3}", new object[] { a, r, g, b });
-            Console.WriteLine(text);*/
+            MedianFiltration medianFiltration = new MedianFiltration(myStream, 10, 10);
+            Console.WriteLine("Фильтрация завершена");
             Console.ReadLine();
         }
     }
