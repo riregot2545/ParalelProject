@@ -7,97 +7,96 @@ using System.Reflection;
 using System.Threading.Tasks;
 using System.Drawing;
 using System.Drawing.Imaging;
+using System.Diagnostics;
+using System.Threading;
 
 namespace Lab1Filters
 {
-    class MedianFiltration
+    class MedianFilter
     {
-        private Bitmap image;
-        private Color[,] colors;
-        private Color[,] resultColors;
-        private Bitmap resultBitmap;
+        private Color[,] colorMatrix;
+        private Size windowSize;
+        private Size imageSize;
+        private Point edge;
 
-        public MedianFiltration(string path, int windowWidth, int windowHeight)
+        private int numberOfThreads;
+
+        public MedianFilter(Bitmap image, Size windowSize, int numberOfThreads)
         {
-            image = new Bitmap(path);
-            ColorArrayInitialization();
-            resultColors = MethodImplementation(windowWidth, windowHeight);
-            BitmapInitialization();
-            resultBitmap.Save("Lab1Result.jpg", ImageFormat.Jpeg);
+            this.imageSize = image.Size;
+            this.colorMatrix = ColorArrayBitmapConverter.ConvertToColorArray(image);
+            this.windowSize = windowSize;
+            this.numberOfThreads = numberOfThreads;
+
+            int edgex = (int)Math.Ceiling(this.windowSize.Width / 2.0);
+            int edgey = (int)Math.Ceiling(this.windowSize.Height / 2.0);
+
+            this.edge = new Point(edgex, edgey);
         }
 
-        public MedianFiltration(Stream path, int windowWidth, int windowHeight)
+        public Bitmap Filter()
         {
-            image = new Bitmap(path);
-            ColorArrayInitialization();
-            resultColors = MethodImplementation(windowWidth, windowHeight);
-            BitmapInitialization();
-            resultBitmap.Save("Lab1Result.jpg", ImageFormat.Jpeg);
-        }
+            Color[,] resultColorMatrix = new Color[imageSize.Width, imageSize.Height];
+            Point[] points = new Point[imageSize.Width * imageSize.Height];
 
-        private void ColorArrayInitialization()
-        {
-            colors = new Color[image.Width, image.Height];
-            for (int i = 0; i < colors.GetLength(0); i++)
+            for (int x = 0, k = 0; x < imageSize.Width; x++)
             {
-                for (int j = 0; j < colors.GetLength(1); j++)
+                for (int y = 0; y < imageSize.Height; y++, k++)
                 {
-                    colors[i, j] = image.GetPixel(i, j);
+                    Point point = new Point(x, y);
+                    points[k] = point;
                 }
             }
-        }
 
-        private void BitmapInitialization()
-        {
-            resultBitmap = new Bitmap(resultColors.GetLength(0), resultColors.GetLength(1));
-            for (int x = 0; x < resultBitmap.Width - 1; x++)
+            int pointsPerThread = points.Length / numberOfThreads;
+            Task[] threads = new Task[numberOfThreads];
+            for (int i = 0; i < numberOfThreads; i++)
             {
-                for (int y = 0; y < resultBitmap.Height - 1; y++)
+                Point[] threadPoints = new Point[pointsPerThread];
+                Array.Copy(points, i * pointsPerThread, threadPoints, 0, pointsPerThread);
+                threads[i] = Task.Run(() =>
                 {
-                    resultBitmap.SetPixel(x, y, resultColors[x, y]);
-                }
-            }
-        }
-
-        private Color[,] MethodImplementation(int windowWidth, int windowHeight)
-        {
-            Color[,] result = new Color[image.Width, image.Height];
-            int edgex = (int)Math.Ceiling(windowWidth / 2.0);
-            int edgey = (int)Math.Ceiling(windowHeight / 2.0);
-            for (int x = edgex; x < image.Width - edgex; x++)
-            {
-                for (int y = edgey; y < image.Height - edgey; y++)
-                {
-                    Color[,] greyArray = new Color[windowWidth, windowHeight];
-                    for (int fx = 0; fx < windowWidth; fx++)
+                    for (int j = 0; j < threadPoints.Length; j++)
                     {
-                        for (int fy = 0; fy < windowHeight; fy++)
-                        {
-                            greyArray[fx, fy] = colors[x + fx - edgex, y + fy - edgey];
-                        }
+                        Pixel pixel = GetNewPixel(threadPoints[j]);
+                        resultColorMatrix[pixel.Point.X, pixel.Point.Y] = pixel.Color;
                     }
-                    result[x, y] = GettingMedian(greyArray);
-                }
+
+                });
             }
 
-            return result;
+            Task.WaitAll(threads);
+
+            return ColorArrayBitmapConverter.ConvertToBitmap(resultColorMatrix);
         }
 
-        private Color GettingMedian(Color[,] greyArray)
+        private Pixel GetNewPixel(Point point)
+        {
+            List<Color> colorList = new List<Color>(windowSize.Width * windowSize.Height);
+            for (int fx = 0; fx < windowSize.Width; fx++)
+            {
+                for (int fy = 0; fy < windowSize.Height; fy++)
+                {
+                    if (InMatrix(point.X + fx - edge.X, point.Y + fy - edge.Y))
+                        colorList.Add(colorMatrix[point.X + fx - edge.X, point.Y + fy - edge.Y]);
+                }
+            }
+            return new Pixel(GetMedian(colorList), point);
+        }
+
+        private Color GetMedian(List<Color> colorArray)
         {
             List<byte>[] byteColors = new List<byte>[3] {
                 new List<byte>(), new List<byte>(), new List<byte>()
             };
             byte[] RGBvalues = new byte[3];
-            for (int i = 0; i < greyArray.GetLength(0); i++)
+            colorArray.ForEach(color =>
             {
-                for (int j = 0; j < greyArray.GetLength(1); j++)
-                {
-                    byteColors[0].Add(greyArray[i, j].R);
-                    byteColors[1].Add(greyArray[i, j].G);
-                    byteColors[2].Add(greyArray[i, j].B);
-                }
-            }
+                byteColors[0].Add(color.R);
+                byteColors[1].Add(color.G);
+                byteColors[2].Add(color.B);
+            });
+
             for (int k = 0; k < byteColors.Length; k++)
             {
                 byteColors[k].Sort();
@@ -106,87 +105,93 @@ namespace Lab1Filters
             Color resColor = Color.FromArgb(255, RGBvalues[0], RGBvalues[1], RGBvalues[2]);
             return resColor;
         }
+
+        public bool InMatrix(int indexX, int indexY)
+        {
+            return indexX > -1 && indexY > -1 && indexX < colorMatrix.GetLength(0) && indexY < colorMatrix.GetLength(1);
+        }
+    }
+
+    class ColorArrayBitmapConverter
+    {
+        public static Bitmap ConvertToBitmap(Color[,] array)
+        {
+            Bitmap resultBitmap = new Bitmap(array.GetLength(0), array.GetLength(1));
+            for (int x = 0; x < resultBitmap.Width - 1; x++)
+            {
+                for (int y = 0; y < resultBitmap.Height - 1; y++)
+                {
+                    resultBitmap.SetPixel(x, y, array[x, y]);
+                }
+            }
+
+            return resultBitmap;
+        }
+
+        public static Color[,] ConvertToColorArray(Bitmap image)
+        {
+            Color[,] colors = new Color[image.Width, image.Height];
+            for (int i = 0; i < colors.GetLength(0); i++)
+            {
+                for (int j = 0; j < colors.GetLength(1); j++)
+                {
+                    colors[i, j] = image.GetPixel(i, j);
+                }
+            }
+
+            return colors;
+        }
+    }
+
+    class Pixel
+    {
+        private Color color;
+        private Point point;
+
+        public Pixel(Color color, Point point)
+        {
+            Color = color;
+            Point = point;
+        }
+
+        public Color Color { get => color; set => color = value; }
+        public Point Point { get => point; set => point = value; }
     }
 
     class Program
     {
-       static void Main(string[] args)
+        private static Stopwatch stopwatch = new Stopwatch();
+
+        static void Main(string[] args)
         {
-            string path = "image\\Lab1.jpg";
-            ImageReader reader = new ImageReader();
-            Bitmap image = reader.importFromFile(path);
-            MatrixCutter matrixCutter = new MatrixCutter(image);
+            int numberOfThreads = 4;
+            int windowSize = 10;
+            Bitmap image = importBitmapFromManifest("Lab1Filters.image.Lab1.jpg");
+            if (args.Length > 0)
+            {
+                numberOfThreads = int.Parse(args[0]);
+                if (args.Length > 1)
+                {
+                    windowSize = int.Parse(args[1]);
+                }
+            }
 
-            Color[][] square = matrixCutter.cutSquareFromImage(0, 0, 9);
+            stopwatch.Start();
+            MedianFilter medianFilter = new MedianFilter(image, new Size(windowSize, windowSize), numberOfThreads);
+            Bitmap output = medianFilter.Filter();
+            stopwatch.Stop();
+            output.Save("Lab1Output.jpg", ImageFormat.Jpeg);
 
+            Console.WriteLine("Фильтрация {0} потоками и окном размером в {1} пикселей завершена за {2} ms.",
+                numberOfThreads, windowSize, stopwatch.Elapsed.TotalMilliseconds);
             Console.ReadLine();
+        }
 
+        static Bitmap importBitmapFromManifest(string manifestPath)
+        {
             Assembly myAssembly = Assembly.GetExecutingAssembly();
-            Stream myStream = myAssembly.GetManifestResourceStream("Lab1Filters.image.Lab1.jpg");
-            MedianFiltration medianFiltration = new MedianFiltration(myStream, 10, 10);
-            Console.WriteLine("Фильтрация завершена");
-            Console.ReadLine();
-
-        }
-
-
-        class ImageReader
-        {
-            public Bitmap importFromFile(string path)
-            {
-                return new Bitmap(path);
-            }
-        }
-
-        class MatrixCutter
-        {
-            private Bitmap image;
-
-            public MatrixCutter(Bitmap image)
-            {
-                this.image = image;
-            }
-
-            //x,y - coordinates of CENTER corner of square
-            public Color[][] cutSquareFromImage(int x, int y, int size)
-            {
-                Color[][] matrix = new Color[size][];
-                for (int i = 0; i < size; i++)
-                {
-                    matrix[i] = new Color[size];
-                }
-
-                int topLeftX = x - size / 2;
-                int topLeftY = y - size / 2;
-
-                for (int i = 0; i < size; i++)
-                {
-                    for (int j = 0; j < size; j++)
-                    {
-                        int xCord = topLeftX + i;
-                        int yCord = topLeftY + j;
-                        if (Utils.inImage(xCord, yCord, image))
-                        {
-                            matrix[i][j] = image.GetPixel(i, j);
-                        }
-                        else
-                        {
-                            matrix[i][j] = Color.Black;
-                        }
-                    }
-                }
-
-                return matrix;
-
-            }
-        }
-
-        class Utils
-        {
-            public static bool inImage(int indexX, int indexY, Bitmap image)
-            {
-                return indexX > -1 && indexY > -1 && indexX < image.Width && indexY < image.Height;
-            }
+            Stream imageStream = myAssembly.GetManifestResourceStream(manifestPath);
+            return new Bitmap(imageStream);
         }
     }
 }
