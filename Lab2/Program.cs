@@ -10,9 +10,10 @@ namespace Lab2
     {
         static void Main(string[] args)
         {
+            Console.WriteLine("Задача 2 выполняется:");
             MessageExchange messageExchange = new MessageExchange();
-            MyThread mt1 = new MyThread("Manufacturer", messageExchange);
-            MyThread mt2 = new MyThread("Consumer", messageExchange);
+            MyThread mt1 = new MyThread("Manufacturer", messageExchange, 10);
+            MyThread mt2 = new MyThread("Consumer", messageExchange, 10);
             mt1.thread.Join();
             mt2.thread.Join();
 
