@@ -2,23 +2,29 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Lab2
 {
-    class Program
+    public class Program
     {
         static void Main(string[] args)
         {
-            Console.WriteLine("Задача 2 выполняется:");
-            MessageExchange messageExchange = new MessageExchange();
-            MyThread mt1 = new MyThread("Manufacturer", messageExchange, 10);
-            MyThread mt2 = new MyThread("Consumer", messageExchange, 10);
-            mt1.thread.Join();
-            mt2.thread.Join();
+            int H = 20;
+            int N = 5;
+            HoneyPot pot = new HoneyPot(H);
+            Bear bear = new Bear(pot);
+            Thread bearT = new Thread(new ThreadStart(bear.run));
+            bearT.Start();
+            for (int i = 0; i < N; i++)
+            {
+                Bee bee = new Bee(pot);
+                Thread beeT = new Thread(new ThreadStart(bee.run));
+                beeT.Start();
+            }
 
-            Console.WriteLine("Задача 2 выполнена");
-            Console.ReadLine();
+            bearT.Join();
         }
     }
 }
