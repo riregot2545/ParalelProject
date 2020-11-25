@@ -63,11 +63,20 @@ namespace Lab2
 
         private static void Task8()
         {
-            /*
-            * 
-            * Задача Саши
-            * 
-            */
+            int H = 20;
+            int N = 5;
+            HoneyPot pot = new HoneyPot(H);
+            Bear bear = new Bear(pot);
+            Thread bearT = new Thread(new ThreadStart(bear.run));
+            bearT.Start();
+            for (int i = 0; i < N; i++)
+            {
+                Bee bee = new Bee(pot);
+                Thread beeT = new Thread(new ThreadStart(bee.run));
+                beeT.Start();
+            }
+
+            bearT.Join();
         }
 
 
